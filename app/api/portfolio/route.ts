@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 const CACHE_TTL_MS = 15_000;
 const REQUEST_TIMEOUT_MS = 7_000;
 const FAILED_QUOTE_RETRY_MS = 60_000;
+const FUNDAMENTALS_CACHE_TTL_MS = 6 * 60 * 60 * 1_000;
+const FAILED_FUNDAMENTALS_RETRY_MS = 15 * 60 * 1_000;
 const MAX_CONCURRENT_QUOTES = 5;
 
 type YahooQuote = {
@@ -22,7 +24,23 @@ type CachedQuote = {
   cachedAt: number;
 };
 
+type GoogleFundamentals = {
+  peRatio: number | null;
+  latestEarnings: number | null;
+  live: boolean;
+};
+
+type CachedFundamentals = {
+  value: GoogleFundamentals;
+  cachedAt: number;
+};
+
+const YAHOO_SYMBOL_ALIASES: Record<string, string> = {
+  "LTIM.NS": "LTM.NS",
+};
+
 const quoteCache = new Map<string, CachedQuote>();
+const fundamentalsCache = new Map<string, CachedFundamentals>();
 
 function isMissingFile(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error && error.code === "ENOENT";
@@ -92,7 +110,8 @@ async function loadPortfolio(): Promise<{
 }
 
 async function fetchYahooQuote(symbol: string, referencePrice: number): Promise<YahooQuote> {
-  const cached = quoteCache.get(symbol);
+  const yahooSymbol = YAHOO_SYMBOL_ALIASES[symbol] ?? symbol;
+  const cached = quoteCache.get(yahooSymbol);
   const cacheTtl = cached?.value.live ? CACHE_TTL_MS : FAILED_QUOTE_RETRY_MS;
   if (cached && Date.now() - cached.cachedAt < cacheTtl) {
     return cached.value;
@@ -100,7 +119,7 @@ async function fetchYahooQuote(symbol: string, referencePrice: number): Promise<
 
   try {
     const url = new URL(
-      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}`,
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}`,
     );
     url.searchParams.set("range", "1d");
     url.searchParams.set("interval", "1m");
@@ -143,12 +162,84 @@ async function fetchYahooQuote(symbol: string, referencePrice: number): Promise<
       previousClose: chart.meta?.chartPreviousClose ?? chart.meta?.previousClose ?? null,
       live: true,
     };
-    quoteCache.set(symbol, { value: quote, cachedAt: Date.now() });
+    quoteCache.set(yahooSymbol, { value: quote, cachedAt: Date.now() });
     return quote;
   } catch (error) {
-    console.error(`Unable to refresh ${symbol}; using the local reference price:`, error);
+    console.error(`Unable to refresh ${yahooSymbol}; using the local reference price:`, error);
     const fallback = { price: referencePrice, previousClose: null, live: false };
-    quoteCache.set(symbol, { value: fallback, cachedAt: Date.now() });
+    quoteCache.set(yahooSymbol, { value: fallback, cachedAt: Date.now() });
+    return fallback;
+  }
+}
+
+function getGoogleFinanceSymbol(yahooSymbol: string): string | null {
+  const match = /^(.+)\.(NS|BO)$/.exec(yahooSymbol);
+  if (!match) return null;
+  return `${match[1]}:${match[2] === "NS" ? "NSE" : "BOM"}`;
+}
+
+function extractGoogleMetric(html: string, label: "P/E ratio" | "EPS"): number | null {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `<div class="KxsRFb">\\s*<div class="SwQK7">${escapedLabel}</div>\\s*<div class="dO6ijd">([^<]+)</div>\\s*</div>`,
+  );
+  const rawValue = html.match(pattern)?.[1];
+  if (!rawValue) return null;
+
+  const normalizedValue = rawValue
+    .replace(/&minus;|−/g, "-")
+    .replace(/&nbsp;|&#160;/g, "")
+    .replace(/[₹,\s]/g, "");
+  const value = Number(normalizedValue);
+  return Number.isFinite(value) ? value : null;
+}
+
+async function fetchGoogleFundamentals(yahooSymbol: string): Promise<GoogleFundamentals> {
+  const googleSymbol = getGoogleFinanceSymbol(yahooSymbol);
+  if (!googleSymbol) {
+    return { peRatio: null, latestEarnings: null, live: false };
+  }
+
+  const cached = fundamentalsCache.get(googleSymbol);
+  const cacheTtl = cached?.value.live
+    ? FUNDAMENTALS_CACHE_TTL_MS
+    : FAILED_FUNDAMENTALS_RETRY_MS;
+  if (cached && Date.now() - cached.cachedAt < cacheTtl) {
+    return cached.value;
+  }
+
+  try {
+    const url = new URL(
+      `https://www.google.com/finance/quote/${encodeURIComponent(googleSymbol)}`,
+    );
+    url.searchParams.set("hl", "en");
+    const response = await fetch(url, {
+      cache: "no-store",
+      headers: { "User-Agent": "Mozilla/5.0 PortfolioDashboard/1.0" },
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(`Google Finance returned HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    const peRatio = extractGoogleMetric(html, "P/E ratio");
+    const latestEarnings = extractGoogleMetric(html, "EPS");
+    const fundamentals = {
+      peRatio,
+      latestEarnings,
+      live: peRatio !== null || latestEarnings !== null,
+    };
+    if (!fundamentals.live) {
+      throw new Error("Google Finance page did not include P/E ratio or EPS metrics");
+    }
+
+    fundamentalsCache.set(googleSymbol, { value: fundamentals, cachedAt: Date.now() });
+    return fundamentals;
+  } catch (error) {
+    console.error(`Unable to refresh Google Finance fundamentals for ${googleSymbol}:`, error);
+    const fallback = { peRatio: null, latestEarnings: null, live: false };
+    fundamentalsCache.set(googleSymbol, { value: fallback, cachedAt: Date.now() });
     return fallback;
   }
 }
@@ -176,15 +267,41 @@ async function mapWithConcurrency<T, R>(
 export async function GET() {
   const { holdings: portfolio, datasetSource } = await loadPortfolio();
   let liveQuoteFailures = 0;
+  let fundamentalsFallbacks = 0;
   const holdings = await mapWithConcurrency(portfolio, MAX_CONCURRENT_QUOTES, async (stock) => {
-    const quote = await fetchYahooQuote(stock.yahooSymbol, stock.referencePrice);
+    const [quote, fundamentals] = await Promise.all([
+      fetchYahooQuote(stock.yahooSymbol, stock.referencePrice),
+      fetchGoogleFundamentals(stock.yahooSymbol),
+    ]);
     const cmp = quote.price;
     const previousClose = quote.previousClose;
     const priceSource: PortfolioHolding["priceSource"] = quote.live ? "yahoo" : "reference";
     if (!quote.live) liveQuoteFailures += 1;
 
+    const peRatio = fundamentals.peRatio ?? stock.peRatio;
+    const latestEarnings = fundamentals.latestEarnings ?? stock.latestEarnings;
+    const peRatioSource: PortfolioHolding["peRatioSource"] =
+      fundamentals.peRatio !== null
+        ? "google-finance"
+        : stock.peRatio === null
+          ? "unavailable"
+          : "workbook";
+    const latestEarningsSource: PortfolioHolding["latestEarningsSource"] =
+      fundamentals.latestEarnings !== null
+        ? "google-finance"
+        : stock.latestEarnings === null
+          ? "unavailable"
+          : "workbook";
+    if (peRatioSource !== "google-finance" || latestEarningsSource !== "google-finance") {
+      fundamentalsFallbacks += 1;
+    }
+
     return {
       ...stock,
+      peRatio,
+      latestEarnings,
+      peRatioSource,
+      latestEarningsSource,
       cmp,
       previousClose,
       dayChangePercent:
@@ -208,12 +325,17 @@ export async function GET() {
       totalInvestment > 0 ? (holding.investment / totalInvestment) * 100 : 0;
   }
 
-  const warnings =
-    liveQuoteFailures > 0
-      ? [
-          `${liveQuoteFailures} of ${portfolio.length} live quotes could not be refreshed. Those rows use local reference prices.`,
-        ]
-      : [];
+  const warnings: string[] = [];
+  if (liveQuoteFailures > 0) {
+    warnings.push(
+      `${liveQuoteFailures} of ${portfolio.length} live quotes could not be refreshed. Those rows use local reference prices.`,
+    );
+  }
+  if (fundamentalsFallbacks > 0) {
+    warnings.push(
+      `Google Finance P/E or EPS data was unavailable for ${fundamentalsFallbacks} of ${portfolio.length} holdings. Workbook values are shown where available.`,
+    );
+  }
 
   return NextResponse.json(
     {

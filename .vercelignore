@@ -1,0 +1,4 @@
+data/portfolio.private.json
+*.xlsx
+.env
+.env.*

@@ -4,7 +4,7 @@
 
 ### Unofficial finance data sources
 
-Yahoo Finance and Google Finance do not offer supported public APIs for this use case. Scraping their pages or depending on undocumented endpoints can break without notice, and repeated requests may be throttled. This implementation uses Yahoo's unofficial chart endpoint for current prices and clearly identifies local reference prices whenever a quote cannot be retrieved. P/E and latest-earnings values remain the local workbook snapshot; they are not labelled as live Google Finance data. A production deployment should use a licensed market-data API with documented rate limits and fundamentals coverage.
+Yahoo Finance and Google Finance do not offer supported public APIs for this use case. The app uses Yahoo's unofficial chart endpoint for CMP and scrapes the public Google Finance quote page for P/E and EPS. Yahoo quotes are cached for 15 seconds; Google fundamentals are cached for six hours, with concurrency limits and shorter retries after failures. If a source is unavailable, the dashboard labels Yahoo reference-price or workbook fallback values instead of implying they are live. The Google HTML structure and undocumented Yahoo endpoint may change or block requests; a production deployment should use a licensed market-data API with documented rate limits and fundamentals coverage.
 
 ### Protecting portfolio information
 
@@ -24,11 +24,11 @@ For each holding, investment is `purchase price × quantity`, present value is `
 
 ### Failures and accuracy
 
-Each failed quote is logged server-side and the response includes a visible warning; the affected stock uses its local reference CMP. If the dashboard request itself fails, the UI retains its last successful response and displays an error. Prices and ratios should be checked against a broker or verified data provider before use.
+Each failed quote or Google scrape is logged server-side. The response includes visible warnings, and the affected metrics use their local reference/workbook value where available. Per-cell source labels distinguish Google Finance data, workbook values, and unavailable data. The “Latest earnings (EPS / share)” column uses Google Finance's EPS metric, which is earnings per share—not total or quarterly company earnings. Workbook fallbacks may use a different period or definition, so the dashboard labels the source rather than implying the values are directly comparable. If the dashboard request itself fails, the UI retains its last successful response and displays an error. Prices and fundamentals should be checked against a broker or verified data provider before use.
 
 ## Verification before release
 
 - Install dependencies and run `npm run build`.
-- Verify that Yahoo data is reachable from the target hosting region and confirm ticker mappings.
+- Verify Yahoo and Google Finance availability from the target hosting region and confirm ticker mappings, especially renamed or delisted securities.
 - Compare workbook totals and selected quotes with the source workbook/broker.
-- If live P/E and earnings are required, integrate a documented, licensed fundamentals provider instead of scraping Google Finance.
+- For production, replace unofficial market-data scraping with a documented, licensed fundamentals and quote provider.

@@ -1,4 +1,4 @@
-# Northstar portfolio dashboard
+# 8Byte Capital Portfolio
 
 A responsive Next.js, React, TypeScript and Tailwind dashboard. This workspace loads your 29 holdings from a local private data file; a clean/public clone uses a small demo portfolio instead.
 
@@ -7,13 +7,13 @@ A responsive Next.js, React, TypeScript and Tailwind dashboard. This workspace l
 - Groups holdings by sector and shows sector-level summaries.
 - Calculates investment, portfolio weight, present value, gain/loss and returns from purchase price, quantity and current price.
 - Refreshes the portfolio from the browser every 15 seconds.
-- Requests current prices from Yahoo Finance on the server; failed requests fall back to local reference prices and are labelled **REF**.
-- Displays the P/E and latest-earnings figures in the local portfolio data.
+- Requests current prices from Yahoo Finance on the server; failed requests fall back to local reference prices and are labelled **REF**. The LTIMindtree ticker rename is mapped to Yahoo's current `LTM.NS` symbol.
+- Scrapes the publicly rendered Google Finance quote page on the server for P/E and EPS. These values are unofficial and cached for six hours; unavailable metrics fall back to the supplied workbook values and are labelled **FILE**.
 - Supports searching, sector filtering, sorting, and responsive layouts.
 - Keeps market-data requests on the server rather than exposing an upstream data URL in the browser.
 - Keeps actual positions out of GitHub by ignoring the private holdings file and the supplied workbook.
 
-> **Market-data note:** Yahoo Finance and Google Finance do not provide supported public APIs for this use. The Yahoo chart endpoint used here is unofficial and can change, throttle, or block requests. P/E and latest-earnings values are the figures in the local portfolio data; they are not represented as live Google Finance data. Check important prices and fundamentals with your broker or a licensed provider.
+> **Market-data note:** Yahoo Finance and Google Finance do not provide supported public APIs for this use. The Yahoo chart endpoint and Google Finance page scraping are unofficial and can change, throttle, or block requests. Google Finance's `EPS` metric is shown in the “Latest earnings (EPS / share)” column because it is a per-share earnings metric; it is not total or quarterly company earnings. Missing values fall back to the supplied workbook snapshot, whose earnings figure may use a different period or definition. Check important prices and fundamentals with your broker or a licensed provider.
 
 ## Run locally
 
@@ -54,4 +54,4 @@ The app needs no API keys to start. The Yahoo endpoint may still be rate-limited
 
 Update `data/portfolio.private.json` in this workspace to change your private holdings. For a public sample/demo, edit [`src/data/portfolio.ts`](./src/data/portfolio.ts). The server endpoint at [`app/api/portfolio/route.ts`](./app/api/portfolio/route.ts) refreshes prices and calculates derived portfolio values.
 
-The dashboard refreshes every 15 seconds. The server limits parallel price requests and caches successful Yahoo quotes for the same interval to reduce duplicate calls. Fundamentals remain the supplied workbook snapshot until replaced with a supported, licensed data provider.
+The dashboard refreshes every 15 seconds. The server limits concurrent quote requests, caches Yahoo quotes for 15 seconds, and caches successful Google Finance fundamentals for six hours to reduce scraping and avoid unnecessary upstream traffic. Google Finance metrics that are unavailable use the supplied workbook value when available. For production, replace unofficial endpoints and scraping with a licensed provider.

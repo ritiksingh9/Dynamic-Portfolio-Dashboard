@@ -11,6 +11,8 @@ export type StockHolding = {
   latestEarnings: number | null;
 };
 
+export type FundamentalSource = "google-finance" | "workbook" | "unavailable";
+
 export type PortfolioHolding = StockHolding & {
   cmp: number;
   presentValue: number;
@@ -21,6 +23,8 @@ export type PortfolioHolding = StockHolding & {
   previousClose: number | null;
   dayChangePercent: number | null;
   priceSource: "yahoo" | "reference";
+  peRatioSource: FundamentalSource;
+  latestEarningsSource: FundamentalSource;
 };
 
 export type PortfolioResponse = {

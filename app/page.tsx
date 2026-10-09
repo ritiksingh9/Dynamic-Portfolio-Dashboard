@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { PortfolioHolding, PortfolioResponse } from "@/src/types/portfolio";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { FundamentalSource, PortfolioHolding, PortfolioResponse } from "@/src/types/portfolio";
 
 const REFRESH_INTERVAL_MS = 15_000;
 const money = new Intl.NumberFormat("en-IN", {
@@ -25,12 +25,20 @@ type SectorSummary = {
   gainLoss: number;
 };
 
+const SECTOR_COLORS = ["#178466", "#5b9bd5", "#e6a23c", "#8a76c2", "#d66b72", "#55a6a1"];
+
 function formatMoney(value: number, compact = false) {
   return (compact ? compactMoney : money).format(value);
 }
 
 function formatMetric(value: number | null) {
   return value === null ? "—" : number.format(value);
+}
+
+function formatSource(source: FundamentalSource) {
+  if (source === "google-finance") return "GOOGLE";
+  if (source === "workbook") return "FILE";
+  return "N/A";
 }
 
 function formatTime(value: string | null) {
@@ -120,6 +128,50 @@ function SectorCard({ sector, total }: { sector: SectorSummary; total: number })
   );
 }
 
+function SectorAllocationChart({ sectors, total }: { sectors: SectorSummary[]; total: number }) {
+  let accumulatedShare = 0;
+  const allocations = sectors.map((sector, index) => {
+    const share = total > 0 ? (sector.investment / total) * 100 : 0;
+    const allocation = {
+      ...sector,
+      color: SECTOR_COLORS[index % SECTOR_COLORS.length],
+      share,
+      start: accumulatedShare,
+      end: accumulatedShare + share,
+    };
+    accumulatedShare += share;
+    return allocation;
+  });
+  const chartBackground = allocations.length
+    ? `conic-gradient(${allocations.map(({ color, start, end }) => `${color} ${start}% ${end}%`).join(", ")})`
+    : "#e9edf2";
+
+  return (
+    <article className="allocation-chart-card">
+      <h3>Investment by sector</h3>
+      <div className="allocation-chart-content">
+        <div
+          className="pie-chart"
+          role="img"
+          aria-label={`Portfolio investment allocation by sector: ${allocations.map(({ name, share }) => `${name} ${number.format(share)} percent`).join(", ") || "No data"}`}
+          style={{ background: chartBackground }}
+        />
+        <ul className="allocation-legend">
+          {allocations.map(({ name, share, color }) => (
+            <li key={name}>
+              <span className="allocation-swatch" style={{ backgroundColor: color }} />
+              <span className="allocation-name">{name}</span>
+              <strong>{number.format(share)}%</strong>
+            </li>
+          ))}
+          {allocations.length === 0 && <li className="allocation-empty">No sector data available</li>}
+        </ul>
+      </div>
+      <p className="allocation-chart-total">{formatMoney(total, true)} total invested</p>
+    </article>
+  );
+}
+
 export default function Home() {
   const [data, setData] = useState<PortfolioResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -129,8 +181,11 @@ export default function Home() {
   const [sectorFilter, setSectorFilter] = useState("All sectors");
   const [sortBy, setSortBy] = useState<"value" | "gain" | "name">("value");
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const refreshInFlight = useRef(false);
 
   const refresh = useCallback(async (showSpinner = false) => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
     if (showSpinner) setRefreshing(true);
     try {
       const response = await fetch("/api/portfolio", { cache: "no-store" });
@@ -148,6 +203,7 @@ export default function Home() {
           : "Unable to refresh your portfolio. Please try again.",
       );
     } finally {
+      refreshInFlight.current = false;
       setLoading(false);
       setRefreshing(false);
     }
@@ -197,9 +253,9 @@ export default function Home() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#" aria-label="Northstar dashboard home">
+        <a className="brand" href="#" aria-label="8Byte Capital Portfolio home">
           <span className="brand-mark"><span /></span>
-          <span className="brand-copy">northstar<span>PORTFOLIO</span></span>
+          <span className="brand-copy">8Byte<span>CAPITAL</span></span>
         </a>
         <p className="nav-caption">WORKSPACE</p>
         <nav className="side-nav" aria-label="Main navigation">
@@ -241,7 +297,6 @@ export default function Home() {
 
           {error && <div className="alert alert-error" role="alert">{error} Showing the latest available values.</div>}
           {data?.datasetSource === "demo" && <div className="alert alert-warning" role="status">Demo portfolio shown. Your private holdings file is not included in this copy of the project.</div>}
-          {data?.warnings.map((warning) => <div className="alert alert-warning" role="status" key={warning}>{warning}</div>)}
 
           <section className="metrics-grid" aria-label="Portfolio summary">
             <MetricCard
@@ -270,14 +325,17 @@ export default function Home() {
               <div><h2>Sector allocation</h2><p>See where your capital is invested</p></div>
               <a className="text-link" href="#holdings">View holdings <span>→</span></a>
             </div>
-            <div className="sector-grid">
-              {sectors.map((sector) => <SectorCard key={sector.name} sector={sector} total={data?.totals.investment ?? 0} />)}
+            <div className="allocation-layout">
+              <SectorAllocationChart sectors={sectors} total={data?.totals.investment ?? 0} />
+              <div className="sector-grid">
+                {sectors.map((sector) => <SectorCard key={sector.name} sector={sector} total={data?.totals.investment ?? 0} />)}
+              </div>
             </div>
           </section>
 
           <section className="holdings-section" id="holdings">
             <div className="section-heading holdings-heading">
-              <div><h2>Your holdings</h2><p>Prices refresh automatically; financial ratios use the workbook snapshot.</p></div>
+              <div><h2>Your holdings</h2><p>Prices refresh automatically; Google Finance fundamentals are cached between refreshes.</p></div>
               <span className="holdings-count">{visibleHoldings.length} of {data?.holdings.length ?? 0} stocks</span>
             </div>
 
@@ -310,7 +368,7 @@ export default function Home() {
                 <thead><tr>
                   <th>Particulars</th><th>Purchase price</th><th>Qty</th><th>Investment</th>
                   <th>Portfolio</th><th>NSE / BSE</th><th>CMP</th><th>Present value</th>
-                  <th>Gain / loss</th><th>P/E ratio</th><th>Latest earnings</th>
+                  <th>Gain / loss</th><th>P/E ratio</th><th>Latest earnings (EPS / share)</th>
                 </tr></thead>
                 <tbody>
                   {loading && !data && <tr><td className="empty-state" colSpan={11}>Loading your portfolio…</td></tr>}
@@ -326,15 +384,21 @@ export default function Home() {
                       <td><div className="cmp-value">{formatMoney(holding.cmp)}</div><span className={`price-source ${holding.priceSource}`}>{holding.priceSource === "yahoo" ? "LIVE" : "REF"}</span></td>
                       <td className="cell-strong">{formatMoney(holding.presentValue)}</td>
                       <td><span className={`gain-value ${positive ? "positive" : "negative"}`}>{positive ? "+" : ""}{formatMoney(holding.gainLoss)}</span><span className={`gain-percent ${positive ? "positive" : "negative"}`}>{positive ? "+" : ""}{number.format(holding.gainLossPercent)}%</span></td>
-                      <td>{formatMetric(holding.peRatio)}</td>
-                      <td>{holding.latestEarnings === null ? "—" : formatMoney(holding.latestEarnings)}</td>
+                      <td>
+                        <div>{formatMetric(holding.peRatio)}</div>
+                        <span className={`fundamental-source ${holding.peRatioSource}`}>{formatSource(holding.peRatioSource)}</span>
+                      </td>
+                      <td>
+                        <div>{holding.latestEarnings === null ? "—" : formatMoney(holding.latestEarnings)}</div>
+                        <span className={`fundamental-source ${holding.latestEarningsSource}`}>{formatSource(holding.latestEarningsSource)}</span>
+                      </td>
                     </tr>;
                   })}
                   {!loading && visibleHoldings.length === 0 && <tr><td className="empty-state" colSpan={11}>{selectedSector ? "No holdings match your search in this sector." : "No holdings match your search."}</td></tr>}
                 </tbody>
               </table>
             </div>
-            <p className="table-footnote">LIVE = latest available Yahoo Finance quote · REF = reference price from local portfolio data · P/E and earnings come from the local portfolio file.</p>
+            <p className="table-footnote">LIVE / REF = Yahoo Finance quote / local reference price · GOOGLE = unofficial Google Finance P/E or EPS per share · FILE = supplied workbook snapshot · N/A = no value available. EPS is per-share earnings, not total or quarterly company earnings.</p>
           </section>
 
           <footer className="page-footer">

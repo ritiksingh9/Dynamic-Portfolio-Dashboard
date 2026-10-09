@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Portfolio | Northstar",
+  title: "8Byte Capital Portfolio",
   description: "A live, sector-aware view of your investment portfolio.",
 };
 

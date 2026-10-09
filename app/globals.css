@@ -77,7 +77,19 @@ h1 { margin: 0; color: #1a2940; font-size: 25px; font-weight: 650; letter-spacin
 .section-heading p { margin: 5px 0 0; color: #8b96a5; font-size: 10px; }
 .text-link { display: flex; gap: 8px; align-items: center; color: #42876c; font-size: 10px; font-weight: 600; }
 .text-link:hover { color: #205d45; }
-.sector-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; }
+.allocation-layout { display: grid; grid-template-columns: minmax(275px, .85fr) minmax(0, 2fr); gap: 13px; align-items: stretch; }
+.allocation-chart-card { min-width: 0; padding: 16px; border: 1px solid #e9edf2; border-radius: 8px; background: #fff; }
+.allocation-chart-card h3 { margin: 0 0 16px; color: #334258; font-size: 11px; font-weight: 600; }
+.allocation-chart-content { display: flex; align-items: center; justify-content: center; gap: 17px; }
+.pie-chart { width: 148px; height: 148px; flex: 0 0 148px; border-radius: 50%; }
+.allocation-legend { min-width: 0; flex: 1; display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+.allocation-legend li { min-width: 0; display: flex; align-items: center; gap: 7px; color: #778496; font-size: 9px; }
+.allocation-swatch { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 2px; }
+.allocation-name { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.allocation-legend strong { color: #344257; font-size: 9px; font-weight: 600; }
+.allocation-legend .allocation-empty { color: #929cab; }
+.allocation-chart-total { margin: 15px 0 0; padding-top: 11px; border-top: 1px solid #f0f2f5; color: #929cab; font-size: 9px; }
+.sector-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px; }
 .sector-card { padding: 14px 15px 12px; border: 1px solid #e9edf2; border-radius: 8px; background: #fff; }
 .sector-card-heading { display: flex; justify-content: space-between; align-items: flex-start; }
 .sector-name { margin: 0; color: #334258; font-size: 11px; font-weight: 600; }
@@ -115,6 +127,10 @@ tbody tr:hover { background: #fafcfb; }
 .price-source { display: inline-block; margin-top: 3px; font-size: 7px; font-weight: 700; letter-spacing: .5px; }
 .price-source.yahoo { color: #368468; }
 .price-source.workbook { color: #a18a51; }
+.fundamental-source { display: inline-block; margin-top: 3px; font-size: 7px; font-weight: 700; letter-spacing: .5px; }
+.fundamental-source.google-finance { color: #368468; }
+.fundamental-source.workbook { color: #a18a51; }
+.fundamental-source.unavailable { color: #a0a8b4; }
 .cell-strong { color: #344257; font-weight: 600; }
 .gain-value, .gain-percent { display: block; font-size: 10px; font-weight: 600; }
 .gain-percent { margin-top: 3px; font-size: 8px; font-weight: 500; }
@@ -133,7 +149,9 @@ tbody tr:hover { background: #fafcfb; }
   .main-panel { margin-left: 205px; }
   .dashboard-content { padding-right: 25px; padding-left: 25px; }
   .topbar { padding: 0 25px; }
-  .sector-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .allocation-layout { grid-template-columns: 1fr; }
+  .allocation-chart-content { justify-content: flex-start; }
+  .allocation-legend { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
   .sidebar { width: 58px; align-items: center; padding: 17px 6px; }
@@ -166,6 +184,10 @@ tbody tr:hover { background: #fafcfb; }
   .metric-note { font-size: 8px; line-height: 1.5; }
   .content-section, .holdings-section { margin-top: 27px; }
   .sector-grid { gap: 8px; }
+  .allocation-chart-card { padding: 13px; }
+  .allocation-chart-content { gap: 13px; }
+  .pie-chart { width: 126px; height: 126px; flex-basis: 126px; }
+  .allocation-legend { grid-template-columns: 1fr; }
   .sector-card { padding: 11px 10px; }
   .sector-card-foot { font-size: 8px; }
   .sector-card-foot strong { font-size: 8px; }
